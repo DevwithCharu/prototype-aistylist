@@ -1,43 +1,119 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Upload, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabaseClient";
 
-const categories = ["Jeans", "Shirts", "Jackets", "T-Shirts", "Traditional Wear"];
+const categories = [
+  "Jeans",
+  "Shirts",
+  "Jackets",
+  "T-Shirts",
+  "Traditional Wear",
+];
 
 export default function Wardrobe() {
   const [items, setItems] = useState([]);
   const [activeCategory, setActiveCategory] = useState("Jeans");
+  const [user, setUser] = useState(null);
 
-  const handleFileUpload = (event, category) => {
+  // -------------------------------
+  // LOAD USER
+  // -------------------------------
+  useEffect(() => {
+    async function getUser() {
+      const { data } = await supabase.auth.getUser();
+      setUser(data.user);
+      if (data.user) fetchWardrobeItems(data.user.id);
+    }
+    getUser();
+  }, []);
+
+  // -------------------------------
+  // FETCH ITEMS FROM DB
+  // -------------------------------
+  async function fetchWardrobeItems(userId) {
+    const { data, error } = await supabase
+      .from("wardrobe_items")
+      .select("*")
+      .eq("user_id", userId);
+
+    if (error) {
+      console.error(error);
+      toast.error("Failed to fetch wardrobe");
+    } else {
+      setItems(data);
+    }
+  }
+
+  // -------------------------------
+  // UPLOAD FILE + SAVE TO DB
+  // -------------------------------
+  const handleFileUpload = async (event, category) => {
     const files = event.target.files;
-    if (!files) return;
+    if (!files || !user) return;
 
-    Array.from(files).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const newItem = {
-          id: Math.random().toString(36).substr(2, 9),
-          name: file.name.replace(/\.[^/.]+$/, ""),
+    for (let file of files) {
+      const filePath = `${user.id}/${category}/${Date.now()}-${file.name}`;
+
+      // Upload to Storage
+      const { data: uploadData, error: uploadErr } = await supabase.storage
+        .from("wardrobe")
+        .upload(filePath, file);
+
+      if (uploadErr) {
+        toast.error("Upload failed!");
+        console.error(uploadErr);
+        continue;
+      }
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from("wardrobe")
+        .getPublicUrl(filePath);
+
+      // Save record in database
+      const { data: insertData, error: insertErr } = await supabase
+        .from("wardrobe_items")
+        .insert({
+          user_id: user.id,
           category,
-          imageUrl: e.target?.result,
-        };
-        setItems((prev) => [...prev, newItem]);
-      };
-      reader.readAsDataURL(file);
-    });
+          name: file.name.replace(/\.[^/.]+$/, ""),
+          image_url: urlData.publicUrl,
+          storage_path: filePath,
+        })
+        .select("*")
+        .single();
 
-    toast.success(`Added ${files.length} item(s) to ${category}`);
+      if (insertErr) {
+        console.error(insertErr);
+        toast.error("Failed to save item in wardrobe");
+      } else {
+        setItems((prev) => [...prev, insertData]);
+        toast.success(`Added ${file.name}`);
+      }
+    }
   };
 
-  const removeItem = (id) => {
-    setItems((prev) => prev.filter((item) => item.id !== id));
-    toast.success("Item removed from wardrobe");
+  // -------------------------------
+  // DELETE ITEM
+  // -------------------------------
+  const removeItem = async (item) => {
+    // Delete from storage
+    await supabase.storage.from("wardrobe").remove([item.storage_path]);
+
+    // Delete from db
+    await supabase.from("wardrobe_items").delete().eq("id", item.id);
+
+    setItems((prev) => prev.filter((i) => i.id !== item.id));
+    toast.success("Item removed");
   };
 
-  const filteredItems = items.filter((item) => item.category === activeCategory);
+  const filteredItems = items.filter(
+    (item) => item.category === activeCategory
+  );
 
   return (
     <div className="min-h-screen py-8">
@@ -49,7 +125,11 @@ export default function Wardrobe() {
           </p>
         </div>
 
-        <Tabs value={activeCategory} onValueChange={setActiveCategory} className="w-full">
+        <Tabs
+          value={activeCategory}
+          onValueChange={setActiveCategory}
+          className="w-full"
+        >
           <TabsList className="grid w-full grid-cols-5 mb-8">
             {categories.map((category) => (
               <TabsTrigger key={category} value={category}>
@@ -62,13 +142,11 @@ export default function Wardrobe() {
             <TabsContent key={category} value={category} className="space-y-6">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-semibold">
-                  {category} ({items.filter((i) => i.category === category).length})
+                  {category} (
+                  {items.filter((i) => i.category === category).length})
                 </h2>
-                <label htmlFor={`upload-${category}`}>
-                  <Button variant="default" className="cursor-pointer">
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload Items
-                  </Button>
+
+                <div>
                   <input
                     id={`upload-${category}`}
                     type="file"
@@ -77,7 +155,18 @@ export default function Wardrobe() {
                     className="hidden"
                     onChange={(e) => handleFileUpload(e, category)}
                   />
-                </label>
+
+                  <Button
+                    variant="default"
+                    className="cursor-pointer"
+                    onClick={() => {
+                      document.getElementById(`upload-${category}`).click();
+                    }}
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload Items
+                  </Button>
+                </div>
               </div>
 
               {filteredItems.length === 0 ? (
@@ -89,12 +178,18 @@ export default function Wardrobe() {
                   <p className="text-muted-foreground mb-6">
                     Upload your first {category.toLowerCase()} to get started
                   </p>
-                  <label htmlFor={`upload-${category}`}>
-                    <Button variant="outline" className="cursor-pointer">
+                  <div>
+                    <Button
+                      variant="outline"
+                      className="cursor-pointer"
+                      onClick={() => {
+                        document.getElementById(`upload-${category}`).click();
+                      }}
+                    >
                       <Upload className="h-4 w-4 mr-2" />
                       Upload Now
                     </Button>
-                  </label>
+                  </div>
                 </Card>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -105,7 +200,7 @@ export default function Wardrobe() {
                     >
                       <div className="aspect-square relative overflow-hidden">
                         <img
-                          src={item.imageUrl}
+                          src={item.image_url}
                           alt={item.name}
                           className="w-full h-full object-cover transition-smooth group-hover:scale-110"
                         />
@@ -113,7 +208,7 @@ export default function Wardrobe() {
                           variant="destructive"
                           size="icon"
                           className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-smooth"
-                          onClick={() => removeItem(item.id)}
+                          onClick={() => removeItem(item)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>

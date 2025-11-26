@@ -2,7 +2,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route } from "react-router-dom";
+
 import Navigation from "./components/Navigation";
 import Home from "./pages/Home";
 import Wardrobe from "./pages/Wardrobe";
@@ -12,6 +13,8 @@ import Shopping from "./pages/Shopping";
 import About from "./pages/About";
 import NotFound from "./pages/NotFound";
 
+import RequireAuth from "@/components/RequireAuth";  // <-- ADD THIS
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -19,20 +22,58 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
+      <HashRouter>
         <Navigation />
+
         <Routes>
+          {/* Public Route */}
           <Route path="/" element={<Home />} />
-          <Route path="/wardrobe" element={<Wardrobe />} />
-          <Route path="/recommendations" element={<OutfitRecommendation />} />
-          <Route path="/chatbot" element={<Chatbot />} />
-          <Route path="/shopping" element={<Shopping />} />
+
+          {/* PROTECTED ROUTES */}
+          <Route
+            path="/wardrobe"
+            element={
+              <RequireAuth>
+                <Wardrobe />
+              </RequireAuth>
+            }
+          />
+
+          <Route
+            path="/recommendations"
+            element={
+              <RequireAuth>
+                <OutfitRecommendation />
+              </RequireAuth>
+            }
+          />
+
+          <Route
+            path="/chatbot"
+            element={
+              <RequireAuth>
+                <Chatbot />
+              </RequireAuth>
+            }
+          />
+
+          <Route
+            path="/shopping"
+            element={
+              <RequireAuth>
+                <Shopping />
+              </RequireAuth>
+            }
+          />
+
+          {/* Public pages */}
           <Route path="/about" element={<About />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
-      </BrowserRouter>
+      </HashRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );
 
 export default App;
+

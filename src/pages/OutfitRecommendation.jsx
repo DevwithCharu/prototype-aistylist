@@ -1,211 +1,207 @@
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
+import Slider from "react-slick";
+import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Sparkles, RefreshCw } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+ function OutfitRecommendation() {
+  const [user, setUser] = useState(null);
 
-const weatherOptions = ["Sunny", "Cloudy", "Rainy", "Cold", "Hot"];
-const occasionOptions = ["Casual", "Formal", "Party", "Work", "Sports", "Traditional"];
-const bodyTypeOptions = ["Slim", "Athletic", "Average", "Plus Size"];
-const skinToneOptions = ["Fair", "Medium", "Olive", "Dark"];
-
-export default function OutfitRecommendation() {
-  const [weather, setWeather] = useState("");
+  const [gender, setGender] = useState("");
   const [occasion, setOccasion] = useState("");
-  const [bodyType, setBodyType] = useState("");
+
   const [skinTone, setSkinTone] = useState("");
-  const [recommendation, setRecommendation] = useState(null);
+  const [bodyType, setBodyType] = useState("");
+  const [colorsText, setColorsText] = useState("");
+  const [imageFile, setImageFile] = useState(null);
 
-  const generateRecommendation = () => {
-    if (!weather || !occasion || !bodyType || !skinTone) {
-      toast.error("Please fill in all preferences");
-      return;
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState([]);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUser(data.user));
+  }, []);
+
+  async function uploadImage(file) {
+    const path = `${user.id}/reference/${Date.now()}-${file.name}`;
+
+    const { error } = await supabase.storage.from("uploads").upload(path, file);
+
+    if (error) throw error;
+
+    return supabase.storage.from("uploads").getPublicUrl(path).data.publicUrl;
+  }
+
+  async function handleGenerate(e) {
+    e.preventDefault();
+
+    if (!user) return toast.error("Please login");
+
+    setLoading(true);
+
+    try {
+      let image_url = null;
+      if (imageFile) image_url = await uploadImage(imageFile);
+
+      const payload = {
+        gender,
+        occasion,
+        skinTone,
+        bodyType,
+        colors: colorsText.split(",").map((c) => c.trim()),
+        image_url,
+      };
+
+      const resp = await supabase.functions.invoke("recommend", {
+        body: JSON.stringify(payload),
+      });
+
+      if (resp.error) throw resp.error;
+
+      setResults(resp.data.recommendations || []);
+      toast.success("Outfits Ready!");
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setLoading(false);
     }
+  }
 
-    const recommendations = {
-      Casual: {
-        Sunny: "Light colored jeans with a breathable cotton t-shirt and sneakers",
-        Rainy: "Dark jeans with a waterproof jacket and comfortable boots",
-        Cold: "Warm jeans with a cozy sweater and a stylish jacket",
-        Hot: "Shorts or lightweight pants with a cool t-shirt",
-        Cloudy: "Comfortable jeans with a casual shirt and light jacket",
-      },
-      Formal: {
-        Sunny: "Crisp dress shirt with tailored trousers and polished shoes",
-        Rainy: "Suit with waterproof coat and formal shoes",
-        Cold: "Suit with warm overcoat and formal accessories",
-        Hot: "Light-colored formal wear with breathable fabrics",
-        Cloudy: "Classic suit with optional blazer",
-      },
-      Traditional: {
-        Sunny: "Light traditional wear suitable for warm weather",
-        Rainy: "Traditional outfit with weather-appropriate layering",
-        Cold: "Traditional wear with warm shawl or jacket",
-        Hot: "Breathable traditional fabrics in light colors",
-        Cloudy: "Comfortable traditional attire",
-      },
-    };
-
-    const occasionRecs = recommendations[occasion] || recommendations.Casual;
-    const baseRec = occasionRecs[weather] || "Smart casual outfit";
-
-    const bodyTypeAdvice = {
-      Slim: "Fitted styles that add definition",
-      Athletic: "Tailored fits that complement your build",
-      Average: "Balanced proportions work great for you",
-      "Plus Size": "Comfortable fits with strategic layering",
-    };
-
-    const skinToneAdvice = {
-      Fair: "Pastels and jewel tones complement your skin",
-      Medium: "Earth tones and warm colors look great",
-      Olive: "Both warm and cool tones work beautifully",
-      Dark: "Bold colors and contrasts are stunning",
-    };
-
-    const fullRecommendation = `${baseRec}. ${bodyTypeAdvice[bodyType]}. ${skinToneAdvice[skinTone]}.`;
-
-    setRecommendation(fullRecommendation);
-    toast.success("Recommendation generated!");
+  const sliderSettings = {
+    dots: true,
+    infinite: true,
+    speed: 400,
+    slidesToShow: 1,
+    slidesToScroll: 1,
   };
 
   return (
-    <div className="min-h-screen py-8">
-      <div className="container mx-auto px-4 max-w-4xl">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-3">Outfit Recommendations</h1>
-          <p className="text-muted-foreground">
-            Get personalized outfit suggestions based on your preferences
-          </p>
-        </div>
+  <div className="container mx-auto p-6">
 
-        <div className="grid md:grid-cols-2 gap-8">
-          {/* Filters */}
-          <Card className="p-6 gradient-card h-fit">
-            <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
-              <Sparkles className="h-6 w-6 text-primary" />
-              Your Preferences
-            </h2>
+    <h1 className="text-3xl font-bold mb-8">Customize Your Outfit</h1>
 
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="weather">Weather</Label>
-                <Select value={weather} onValueChange={setWeather}>
-                  <SelectTrigger id="weather">
-                    <SelectValue placeholder="Select weather" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {weatherOptions.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
 
-              <div className="space-y-2">
-                <Label htmlFor="occasion">Occasion</Label>
-                <Select value={occasion} onValueChange={setOccasion}>
-                  <SelectTrigger id="occasion">
-                    <SelectValue placeholder="Select occasion" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {occasionOptions.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+      {/* LEFT SIDE FORM */}
+      <div>
+        <form onSubmit={handleGenerate} className="space-y-4">
 
-              <div className="space-y-2">
-                <Label htmlFor="bodyType">Body Type</Label>
-                <Select value={bodyType} onValueChange={setBodyType}>
-                  <SelectTrigger id="bodyType">
-                    <SelectValue placeholder="Select body type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {bodyTypeOptions.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          <label>
+            Gender
+            <select className="border p-2 w-full" value={gender} onChange={(e) => setGender(e.target.value)}>
+              <option value="">Select</option>
+              <option>Male</option>
+              <option>Female</option>
+            </select>
+          </label>
 
-              <div className="space-y-2">
-                <Label htmlFor="skinTone">Skin Tone</Label>
-                <Select value={skinTone} onValueChange={setSkinTone}>
-                  <SelectTrigger id="skinTone">
-                    <SelectValue placeholder="Select skin tone" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {skinToneOptions.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          <label>
+            Occasion
+            <select className="border p-2 w-full" value={occasion} onChange={(e) => setOccasion(e.target.value)}>
+              <option value="">Select</option>
+              <option>Casual</option>
+              <option>Office</option>
+              <option>Party</option>
+              <option>Wedding</option>
+            </select>
+          </label>
 
-              <Button onClick={generateRecommendation} className="w-full gradient-hero" size="lg">
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Generate Recommendation
-              </Button>
-            </div>
-          </Card>
+          <label>
+            Skin Tone
+            <select className="border p-2 w-full" value={skinTone} onChange={(e) => setSkinTone(e.target.value)}>
+              <option value="">Select</option>
+              <option>Warm</option>
+              <option>Cool</option>
+              <option>Neutral</option>
+            </select>
+          </label>
 
-          {/* Recommendation */}
-          <Card className="p-6 gradient-card">
-            <h2 className="text-2xl font-semibold mb-6">Your Perfect Outfit</h2>
+          <label>
+            Body Type
+            <select className="border p-2 w-full" value={bodyType} onChange={(e) => setBodyType(e.target.value)}>
+              <option value="">Select</option>
+              <option>Pear</option>
+              <option>Apple</option>
+              <option>Rectangle</option>
+              <option>Hourglass</option>
+            </select>
+          </label>
 
-            {recommendation ? (
-              <div className="space-y-6">
-                <div className="p-6 bg-primary/10 rounded-xl border border-primary/20">
-                  <p className="text-lg leading-relaxed">{recommendation}</p>
-                </div>
+          <label>
+            Favorite Colors
+            <Input
+              value={colorsText}
+              onChange={(e) => setColorsText(e.target.value)}
+              placeholder="navy, olive, maroon"
+            />
+          </label>
 
-                <div className="space-y-4">
-                  <h3 className="font-semibold">Style Tips:</h3>
-                  <ul className="space-y-2 text-muted-foreground">
-                    <li className="flex items-start gap-2">
-                      <span className="text-primary mt-1">•</span>
-                      <span>Match accessories with your outfit's color palette</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-primary mt-1">•</span>
-                      <span>Consider comfort along with style</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-primary mt-1">•</span>
-                      <span>Don't forget appropriate footwear</span>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <Sparkles className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-                <p className="text-muted-foreground">
-                  Select your preferences and click "Generate Recommendation" to see your perfect outfit
-                </p>
-              </div>
-            )}
-          </Card>
-        </div>
+          <label>
+            Optional Image (reference)
+            <input type="file" accept="image/*" onChange={(e) => setImageFile(e.target.files?.[0] || null)} />
+          </label>
+
+          <Button disabled={loading}>
+            {loading ? "Generating..." : "Generate Outfits"}
+          </Button>
+
+        </form>
+      </div>
+
+      {/* RIGHT SIDE – ALWAYS VISIBLE OUTFITS */}
+      <div>
+        <h2 className="text-2xl font-bold mb-4">Your Outfits</h2>
+
+        {results.length === 0 && (
+          <p className="text-gray-500">No outfits yet. Fill the form and generate!</p>
+        )}
+
+        {results.map((outfit, idx) => (
+          <div key={idx} className="mb-8 p-5 border rounded-lg shadow">
+
+            {/* SLIDER FIXED WIDTH */}
+           <Slider
+  dots={true}
+  infinite={true}
+  speed={400}
+  slidesToShow={1}
+  slidesToScroll={1}
+>
+  {/* If backend returned images array */}
+  {Array.isArray(outfit.images) && outfit.images.length > 0 ? (
+    outfit.images.map((img, i) => (
+      <img
+        key={i}
+        src={img}
+        className="w-full h-72 object-cover rounded-lg"
+        onError={(e) => (e.target.style.display = "none")}
+      />
+    ))
+  ) : (
+    /* Fallback single image */
+    <img
+      src={outfit.image || "/placeholder.jpg"}
+      className="w-full h-72 object-cover rounded-lg"
+    />
+  )}
+</Slider>
+
+
+            <h3 className="text-xl font-semibold mt-3">{outfit.title}</h3>
+            <p className="text-gray-600">{outfit.description}</p>
+
+            <ul className="mt-3 list-disc ml-6 text-sm">
+              {outfit.items?.map((item, i) => (
+                <li key={i}>{item}</li>
+              ))}
+            </ul>
+
+          </div>
+        ))}
       </div>
     </div>
-  );
+  </div>
+);
 }
+
+export default OutfitRecommendation;

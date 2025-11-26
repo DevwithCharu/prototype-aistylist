@@ -1,272 +1,345 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Upload, Camera, Download, RotateCcw } from "lucide-react";
-import { toast } from "sonner";
+import { X } from "lucide-react";
 
- function ARTryOn() {
-  const [userImage, setUserImage] = useState(null);
-  const [selectedItem, setSelectedItem] = useState(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const canvasRef = useRef(null);
+/**
+ * ARTryOn component
+ * - Live camera via getUserMedia
+ * - Upload image fallback
+ * - Clothing thumbnails — click to apply overlay
+ * - Simple overlay controls: left, top, scale, rotate, opacity
+ *
+ * Put this file at: src/components/ARTryOn.jsx
+ * Import: import ARTryOn from "@/components/ARTryOn";
+ */
+
+const CLOTHES = [
+  {
+    id: 1,
+    name: "White T-Shirt",
+    image:
+      "./clothes/whiteshirt.png",
+  },
+  {
+    id: 2,
+    name: "Black Hoodie",
+    image:
+      "./clothes/sweatshirt.png",
+  },
+  {
+    id: 3,
+    name: "Blue Denim Jacket",
+    image:
+      "./clothes/denimjacket.png",
+  },
+  {
+    id: 4,
+    name: "Formal Shirt",
+    image:
+      "./clothes/pinktshirt.png",
+  },
+];
+
+function ARTryOn() {
+  const [open, setOpen] = useState(false);
+
+  // Camera states
+  const [cameraOn, setCameraOn] = useState(false);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+
+  // user / upload image
+  const [userImage, setUserImage] = useState(null); // object URL
   const fileInputRef = useRef(null);
 
-  // Mock wardrobe items - in real app, would come from Wardrobe state
-  const mockWardrobeItems = [
-    {
-      id: "1",
-      name: "Blue Denim Shirt",
-      category: "Shirts",
-      imageUrl:
-        "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=200&h=200&fit=crop",
-    },
-    {
-      id: "2",
-      name: "White T-Shirt",
-      category: "T-Shirts",
-      imageUrl:
-        "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=200&h=200&fit=crop",
-    },
-    {
-      id: "3",
-      name: "Black Jacket",
-      category: "Jackets",
-      imageUrl:
-        "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=200&h=200&fit=crop",
-    },
-  ];
+  // overlay clothing
+  const [overlay, setOverlay] = useState(null); // clothing image url
 
-  const handleImageUpload = (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  // overlay transform controls
+  const [left, setLeft] = useState(50); // percent center
+  const [top, setTop] = useState(38); // percent
+  const [scale, setScale] = useState(1.0);
+  const [rotate, setRotate] = useState(0);
+  const [opacity, setOpacity] = useState(0.95);
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setUserImage(e.target?.result);
-      toast.success("Image uploaded! Select a clothing item to try on.");
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const applyOutfitOverlay = async (clothingItem) => {
-    if (!userImage || !canvasRef.current) return;
-
-    setIsProcessing(true);
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
+  // Start camera
+  async function startCamera() {
     try {
-      // Load user image
-      const userImg = new Image();
-      userImg.crossOrigin = "anonymous";
-      await new Promise((resolve, reject) => {
-        userImg.onload = resolve;
-        userImg.onerror = reject;
-        userImg.src = userImage;
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
       });
-
-      // Set canvas size
-      canvas.width = userImg.width;
-      canvas.height = userImg.height;
-
-      // Draw user image
-      ctx.drawImage(userImg, 0, 0);
-
-      // Load clothing item
-      const clothingImg = new Image();
-      clothingImg.crossOrigin = "anonymous";
-      await new Promise((resolve, reject) => {
-        clothingImg.onload = resolve;
-        clothingImg.onerror = reject;
-        clothingImg.src = clothingItem.imageUrl;
-      });
-
-      // Calculate overlay position (center top area for shirts/jackets)
-      const overlayWidth = userImg.width * 0.6;
-      const overlayHeight =
-        (clothingImg.height / clothingImg.width) * overlayWidth;
-      const x = (userImg.width - overlayWidth) / 2;
-      const y = userImg.height * 0.15;
-
-      // Apply slight transparency for realistic blend
-      ctx.globalAlpha = 0.85;
-      ctx.drawImage(clothingImg, x, y, overlayWidth, overlayHeight);
-      ctx.globalAlpha = 1.0;
-
-      toast.success(`${clothingItem.name} applied! Download or try another item.`);
-    } catch (error) {
-      console.error("Error applying outfit:", error);
-      toast.error("Failed to apply outfit. Please try again.");
-    } finally {
-      setIsProcessing(false);
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setCameraOn(true);
+      // clear any uploaded user image because camera is live
+      setUserImage(null);
+    } catch (err) {
+      console.error("Camera start failed", err);
+      alert("Could not access camera. Make sure permissions are allowed and you're on https or localhost.");
     }
-  };
+  }
 
-  const handleItemSelect = (item) => {
-    setSelectedItem(item);
-    applyOutfitOverlay(item);
-  };
+  // Stop camera & cleanup
+  function stopCamera() {
+    try {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.pause();
+        videoRef.current.srcObject = null;
+      }
+    } catch (err) {
+      console.warn("Error stopping camera", err);
+    }
+    setCameraOn(false);
+  }
 
-  const resetCanvas = () => {
-    if (!canvasRef.current || !userImage) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+  // Upload a user image instead of camera
+  function handleUpload(e) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    // revoke previous if exists
+    if (userImage) URL.revokeObjectURL(userImage);
+    const url = URL.createObjectURL(f);
+    setUserImage(url);
+    // when uploading image we should stop camera if running
+    if (cameraOn) stopCamera();
+  }
 
-    const img = new Image();
-    img.onload = () => {
-      canvas.width = img.width;
-      canvas.height = img.height;
-      ctx.drawImage(img, 0, 0);
-    };
-    img.src = userImage;
-    setSelectedItem(null);
-  };
-
-  const downloadImage = () => {
-    if (!canvasRef.current) return;
-    const link = document.createElement("a");
-    link.download = "virtual-tryon.png";
-    link.href = canvasRef.current.toDataURL();
-    link.click();
-    toast.success("Image downloaded!");
-  };
-
+  // Clean up object URLs and tracks when component is unmounted or modal closed
   useEffect(() => {
-    if (userImage && canvasRef.current) {
-      resetCanvas();
+    return () => {
+      if (userImage) URL.revokeObjectURL(userImage);
+      stopCamera();
+    };
+    // eslint-disable-next-line
+  }, []);
+
+  // When modal closes, cleanup streams and urls
+  useEffect(() => {
+    if (!open) {
+      stopCamera();
+      if (userImage) {
+        URL.revokeObjectURL(userImage);
+        setUserImage(null);
+      }
+      setOverlay(null);
+      // reset overlay controls
+      setLeft(50);
+      setTop(38);
+      setScale(1);
+      setRotate(0);
+      setOpacity(0.95);
     }
-  }, [userImage]);
+    // eslint-disable-next-line
+  }, [open]);
+
+  // Render preview background: prefer camera if running, else uploaded image, else placeholder
+  const renderBackground = () => {
+    if (cameraOn) {
+      return (
+        <video
+          ref={videoRef}
+          className="w-full h-full object-cover rounded-md"
+          playsInline
+          muted
+        />
+      );
+    }
+    if (userImage) {
+      return (
+        <img
+          src={userImage}
+          alt="uploaded"
+          className="w-full h-full object-contain rounded-md"
+          style={{ maxHeight: "520px" }}
+        />
+      );
+    }
+    return (
+      <div className="w-full h-full flex items-center justify-center text-gray-500">
+        Upload a photo or start the camera to preview.
+      </div>
+    );
+  };
 
   return (
-    <Card className="p-6 gradient-card">
-      <div className="mb-6">
-        <div className="flex items-center gap-3 mb-2">
-          <Camera className="h-6 w-6 text-primary" />
-          <h2 className="text-2xl font-semibold">AR Virtual Try-On</h2>
-        </div>
-        <p className="text-muted-foreground">
-          Upload your photo and virtually try on outfits from your wardrobe
-        </p>
-      </div>
+    <>
+      <Button onClick={() => setOpen(true)}>Try Clothes in AR</Button>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* Canvas Display */}
-        <div className="space-y-4">
-          <div className="aspect-[3/4] bg-muted rounded-xl overflow-hidden relative border-2 border-dashed border-border flex items-center justify-center">
-            {userImage ? (
-              <canvas
-                ref={canvasRef}
-                className="max-w-full max-h-full object-contain"
-              />
-            ) : (
-              <div className="text-center p-8">
-                <Upload className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground mb-4">
-                  Upload a photo to get started
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white w-full max-w-5xl rounded-xl shadow-xl overflow-hidden max-h-[92vh]">
+            <div className="flex items-start justify-between p-4 border-b">
+              <div>
+                <h3 className="text-xl font-bold">AR Try-On</h3>
+                <p className="text-sm text-muted-foreground">
+                  Choose a clothing item, start camera or upload a photo, then adjust overlay.
                 </p>
-                <Button
-                  onClick={() => fileInputRef.current?.click()}
-                  variant="default"
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  Upload Photo
-                </Button>
               </div>
-            )}
-          </div>
 
-          {userImage && (
-            <div className="flex gap-2">
-              <Button
-                onClick={resetCanvas}
-                variant="outline"
-                className="flex-1"
-                disabled={isProcessing}
-              >
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Reset
-              </Button>
-              <Button
-                onClick={downloadImage}
-                variant="default"
-                className="flex-1"
-                disabled={isProcessing}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Download
-              </Button>
-            </div>
-          )}
+              <div className="flex items-center gap-2">
+                {/* Camera controls */}
+                {!cameraOn ? (
+                  <Button onClick={startCamera} className="mr-2">
+                    Start Camera
+                  </Button>
+                ) : (
+                  <Button onClick={stopCamera} variant="destructive" className="mr-2">
+                    Stop Camera
+                  </Button>
+                )}
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleImageUpload}
-          />
-        </div>
+                {/* Upload button */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  id="user-upload"
+                  onChange={handleUpload}
+                  className="hidden"
+                />
+                <label htmlFor="user-upload">
+                  <Button asChild>
+                    <span onClick={() => fileInputRef.current?.click()}>Upload Photo</span>
+                  </Button>
+                </label>
 
-        {/* Wardrobe Selection */}
-        <div className="space-y-4">
-          <div>
-            <h3 className="font-semibold mb-3">Your Wardrobe</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Select an item to try on
-            </p>
-          </div>
-
-          {!userImage ? (
-            <div className="text-center p-8 bg-muted/50 rounded-xl">
-              <p className="text-muted-foreground">
-                Upload your photo first to select clothing items
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-3">
-              {mockWardrobeItems.map((item) => (
                 <button
-                  key={item.id}
-                  onClick={() => handleItemSelect(item)}
-                  disabled={isProcessing}
-                  className={`
-                    p-3 rounded-xl border-2 transition-smooth
-                    hover:border-primary hover:shadow-hover
-                    ${
-                      selectedItem?.id === item.id
-                        ? "border-primary bg-primary/10"
-                        : "border-border bg-card"
-                    }
-                    disabled:opacity-50 disabled:cursor-not-allowed
-                  `}
+                  className="p-1 rounded hover:bg-slate-100"
+                  onClick={() => setOpen(false)}
                 >
-                  <div className="aspect-square rounded-lg overflow-hidden mb-2 bg-muted">
-                    <img
-                      src={item.imageUrl}
-                      alt={item.name}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <p className="text-sm font-medium truncate">{item.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {item.category}
-                  </p>
+                  <X size={20} />
                 </button>
-              ))}
+              </div>
             </div>
-          )}
 
-          {isProcessing && (
-            <div className="text-center p-4">
-              <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-solid border-primary border-r-transparent mb-2"></div>
-              <p className="text-sm text-muted-foreground">Applying outfit...</p>
-            </div>
-          )}
+            <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Left: thumbnails */}
+              <div className="md:col-span-1 space-y-3">
+                <div className="flex gap-2 overflow-x-auto pb-2">
+                  {CLOTHES.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => setOverlay(c.image)}
+                      className="flex-shrink-0 w-20 h-20 rounded-md overflow-hidden border hover:ring-2"
+                      title={c.name}
+                    >
+                      <img src={c.image} alt={c.name} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+
+                <div className="pt-2">
+                  <h4 className="text-sm font-semibold mb-2">Overlay Controls</h4>
+
+                  <label className="text-xs">Left ({left}%)</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={left}
+                    onChange={(e) => setLeft(Number(e.target.value))}
+                    className="w-full"
+                  />
+
+                  <label className="text-xs mt-2">Top ({top}%)</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={top}
+                    onChange={(e) => setTop(Number(e.target.value))}
+                    className="w-full"
+                  />
+
+                  <label className="text-xs mt-2">Scale ({scale.toFixed(2)}x)</label>
+                  <input
+                    type="range"
+                    min="0.4"
+                    max="2.4"
+                    step="0.01"
+                    value={scale}
+                    onChange={(e) => setScale(Number(e.target.value))}
+                    className="w-full"
+                  />
+
+                  <label className="text-xs mt-2">Rotate ({rotate}°)</label>
+                  <input
+                    type="range"
+                    min="-180"
+                    max="180"
+                    value={rotate}
+                    onChange={(e) => setRotate(Number(e.target.value))}
+                    className="w-full"
+                  />
+
+                  <label className="text-xs mt-2">Opacity ({Math.round(opacity * 100)}%)</label>
+                  <input
+                    type="range"
+                    min="0.2"
+                    max="1"
+                    step="0.01"
+                    value={opacity}
+                    onChange={(e) => setOpacity(Number(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+
+                <div className="pt-3">
+                  <Button onClick={() => {
+                    // Reset overlay controls
+                    setLeft(50); setTop(38); setScale(1); setRotate(0); setOpacity(0.95);
+                  }}>Reset Overlay</Button>
+                </div>
+              </div>
+
+              {/* Middle + Right: preview (spans 2 cols on md) */}
+              <div className="md:col-span-2">
+                <div className="relative bg-gray-100 rounded-lg overflow-hidden w-full h-[520px] flex items-center justify-center">
+                  {/* Background: video or image */}
+                  <div className="absolute inset-0">
+                    {renderBackground()}
+                  </div>
+
+                  {/* Overlay clothing */}
+                  {overlay && (cameraOn || userImage) && (
+                    <img
+                      src={overlay}
+                      alt="overlay"
+                      style={{
+                        position: "absolute",
+                        left: `${left}%`,
+                        top: `${top}%`,
+                        transform: `translate(-50%, -50%) scale(${scale}) rotate(${rotate}deg)`,
+                        opacity: opacity,
+                        maxWidth: "60%",
+                        pointerEvents: "none",
+                      }}
+                    />
+                  )}
+
+                  {/* If no background active, show placeholder */}
+                  {!cameraOn && !userImage && (
+                    <div className="text-center text-gray-500">
+                      <p className="mb-2">No camera or uploaded photo.</p>
+                      <p className="text-xs">Start camera or upload a photo to preview.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div> {/* end control grid */}
+          </div>
         </div>
-      </div>
-    </Card>
+      )}
+    </>
   );
 }
+
 export default ARTryOn;

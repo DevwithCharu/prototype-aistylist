@@ -57,7 +57,7 @@ const priorityColors = {
   low: "secondary",
 };
 
-export default function Shopping() {
+ function Shopping() {
   return (
     <div className="min-h-screen py-8">
       <div className="container mx-auto px-4">
@@ -107,7 +107,8 @@ export default function Shopping() {
 
         {/* AR Try-On Section */}
         <div className="mb-8">
-          <ARTryOn />
+          <ARTryOn/>
+
         </div>
 
         {/* Shopping Recommendations */}
@@ -183,3 +184,6 @@ export default function Shopping() {
     </div>
   );
 }
+
+
+export default Shopping;
