@@ -18,25 +18,25 @@ const CLOTHES = [
     id: 1,
     name: "White T-Shirt",
     image:
-      "./clothes/whiteshirt.png",
+      "/clothes/whiteshirt.png",
   },
   {
     id: 2,
     name: "Black Hoodie",
     image:
-      "./clothes/sweatshirt.png",
+      "/clothes/sweatshirt.png",
   },
   {
     id: 3,
     name: "Blue Denim Jacket",
     image:
-      "./clothes/denimjacket.png",
+      "/clothes/denimjacket.png",
   },
   {
     id: 4,
     name: "Formal Shirt",
     image:
-      "./clothes/pinktshirt.png",
+      "/clothes/pinktshirt.png",
   },
 ];
 
